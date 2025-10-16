@@ -1,0 +1,58 @@
+ ## Likelihood components:
+  for(i in 1:N) {
+    Y[i] ~ dnorm(mu[i], prec_i[i])
+    prec_i[i] <- 1 / pow(tau[i], 2) # JAGS uses precision
+
+    ## Location
+    # This part can be simplified since JAGS handles scalars correctly
+    mu[i] <- inprod(beta[], X[i,]) + inprod(u_final[groupid[i], 1:Kr], Z[i, 1:Kr])
+
+    ## Scale
+    log(tau[i]) <- inprod(zeta[], X_scale[i,]) + inprod(u_final[groupid[i], (Kr+1):(Kr+Sr)], Z_scale[i, 1:Sr])
+  }
+
+  ## Priors & Random Effects Model
+  ## Fixed effects: Location
+  for (k in 1:K) {
+    beta[k] ~ dnorm(0, 1.0E-6) # Vague prior via precision
+  }
+  ## Fixed effects: Scale
+  for (s in 1:S) {
+    zeta[s] ~ dnorm(0, 1/3^2)
+  }
+
+  ## Correlated Random Effects (The JAGS/BUGS way)
+  for(j in 1:J) {
+    ## Bernoulli for Spike and Slab
+    for(p in 1:P){
+      ss[p,j] ~ dbern(bval[p,1])
+    }
+
+    ## Draw correlated effects from a multivariate normal distribution
+    u[j, 1:P] ~ dmnorm(mu_u[1:P], Omega[1:P, 1:P])
+
+    ## Apply the spike-and-slab selector
+    for(p in 1:P) {
+      u_final[j, p] <- u[j, p] * ss[p,j]
+    }
+  }
+
+  ## Prior for the random effects precision matrix
+  Omega[1:P, 1:P] ~ dwish(R_wish[1:P, 1:P], K_wish) # Wishart prior
+
+  ## Derived quantities
+  Sigma[1:P, 1:P] <- inverse(Omega[1:P, 1:P]) # Covariance matrix
+
+  # Derive standard deviations and correlation matrix for monitoring
+  for (p in 1:P) {
+    sigma_rand[p] <- sqrt(Sigma[p,p])
+    for (p2 in 1:P) {
+      rho[p, p2] <- Sigma[p, p2] / (sigma_rand[p] * sigma_rand[p2])
+    }
+  }
+
+  # A vector of zeros for the mean of the MVN random effects
+  for(p in 1:P){
+    mu_u[p] <- 0
+  }
+}

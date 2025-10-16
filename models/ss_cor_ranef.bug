@@ -1,0 +1,53 @@
+
+model {
+## Likelihood components:
+   for(i in 1:N) {
+   Y[i] ~ dnorm(mu[i], prec_i[i])
+   prec_i[i] <- 1 / pow(tau_i[i], 2)
+
+   mu[i] <- inprod(beta[], X[i, 1:K]) + inprod(v_final[groupid[i], 1:1], Z[i, 1:1])
+   log(tau_i[i]) <- inprod(zeta[], X_scale[i, 1:S]) + inprod(v_final[groupid[i], 2:2], Z_scale[i, 1:1])
+   }
+
+## Priors & Random Effects Model
+   for(j in 1:J) { # J  <- groups
+# Standard normal deviates
+  for(p in 1:P){
+        z[j,p] ~ dnorm(0,1)
+  }
+
+# Generate correlated random effects v = tau * L * z
+  v[j,1] <- tau[1] * (L[1, 1] * z[j, 1])
+  v[j,2] <- tau[2] * (L[2, 1] * z[j, 1] + L[2, 2] * z[j, 2])
+
+
+# Assign location random effects (always on)
+  for (k in 1:1) {
+      v_final[j, k] <- v[j, k]
+    }
+
+# Assign scale random effects (with spike-and-slab via loop)
+  for (k in 1:1) {
+         ss[j, k] ~ dbern(bval[k, 1])
+         v_final[j, 1 + k] <- v[j, 1 + k] * ss[j, k]
+         }
+}
+
+  ## Priors for correlations
+  zscore_1_2 ~ dnorm(0, 1)
+  rho[1,2] <- tanh(zscore_1_2)
+  rho[2,1] <- rho[1,2]
+  rho[1,1] <- 1
+  rho[2,2] <- 1
+
+  ## Cholesky decomposition of the correlation matrix
+  L[1,1] <- 1
+  L[2,1] <- rho[2,1]
+  L[2,2] <- sqrt(1 - (pow(L[2, 1], 2)))
+  L[1,2] <- 0
+
+# --- Priors for fixed effects and variance components ---
+  for (k in 1:K) { beta[k] ~ dnorm(0, 1.0E-6) }
+  for (s in 1:S) { zeta[s] ~ dnorm(0, 1/3^2) }
+  for (p in 1:P) { tau[p] ~ dt(0, 1, 1) T(0,) }
+}
