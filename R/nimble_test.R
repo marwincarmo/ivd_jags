@@ -52,7 +52,17 @@ school_dat <- data.frame(
 
 # A correlation of 0.5 between the random effects is expected
 
-# nimble model --------------------------------------------------------
+## nimble model --------------------------------------------------------
+
+uppertri_mult_diag <- nimbleFunction(
+    run = function(mat = double(2), vec = double(1)) {
+        returnType(double(2))
+        p <- length(vec)
+        out <- matrix(nrow = p, ncol = p, init = FALSE)
+        for(i in 1:p)
+            out[ , i] <- mat[ , i] * vec[i]
+        return(out)
+    })
 
 model_code <- nimbleCode({
 
@@ -70,7 +80,8 @@ model_code <- nimbleCode({
     }
     ## Transpose U to get lower cholesky
     ## then compute the hadamard (element-wise) product with the ss vector
-    u[j,1:P] <- t( sigma_rand[1:P, 1:P] %*% L[1:P, 1:P]  %*% z[1:P,j])
+    ##u[j,1:P] <- t( sigma_rand[1:P, 1:P] %*% L[1:P, 1:P]  %*% z[1:P,j])
+    u[j, 1:P] <- t(U[1:P, 1:P]) %*% z[1:P, j]
   }
 
   # Fixed intercept location
@@ -78,16 +89,23 @@ model_code <- nimbleCode({
   # Fixed intercept scale
   scl_int ~ dnorm(0, sd = 10)
   ## Random effects SD
+  ## for(p in 1:P){
+  ##   sigma_rand[p,p] ~ T(dt(0, 1, 3), 0, )
+  ## }
+  ## instead use a vector of random effects
   for(p in 1:P){
-    sigma_rand[p,p] ~ T(dt(0, 1, 3), 0, )
+    sigma_rand[p] ~ T(dt(0, 1, 3), 0, )
   }
 
   ## Upper cholesky of random effects correlation
-  U[1:P, 1:P] ~ dlkj_corr_cholesky(eta = 1, p = P)
-  L[1:P, 1:P] <- t(U[1:P, 1:P])
+  Ustar[1:P, 1:P] ~ dlkj_corr_cholesky(eta= 1, P)
+  U[1:P, 1:P] <- uppertri_mult_diag(Ustar[1:P, 1:P], sigma_rand[1:P])
+
+  #U[1:P, 1:P] ~ dlkj_corr_cholesky(eta = 1, p = P)
+  #L[1:P, 1:P] <- t(U[1:P, 1:P])
 
   ##
-  R[1:P, 1:P] <- t(U[1:P, 1:P] ) %*% U[1:P, 1:P] # using upper cholesky
+  R[1:P, 1:P] <- t(Ustar[1:P, 1:P] ) %*% Ustar[1:P, 1:P] # using upper cholesky
   #R[1:P, 1:P] <- L[1:P, 1:P] %*% t(L[1:P, 1:P] ) # using lower cholesky
 
 })
@@ -102,18 +120,18 @@ nimble_data <- list(y = school_dat$y)
 
 inits <- list(loc_int = rnorm(1, 5, 10),
               scl_int =  rnorm(1, 1, 3),
-              sigma_rand = diag(rlnorm(constants$P, 0, 1)),
-              U = diag(1,constants$P)
+             # sigma_rand = diag(rlnorm(constants$P, 0, 1)),
+              Ustar = diag(1,constants$P)
               )
 
-school_model <- nimbleModel(code = model_code, name = "school_model", constants = constants,
-                    data = nimble_data, inits = inits)
+## school_model <- nimbleModel(code = model_code, name = "school_model", constants = constants,
+##                     data = nimble_data, inits = inits)
 
 
 mcmc.out <- nimbleMCMC(code = model_code, constants = constants,
                        data = nimble_data, inits = inits,
-                       nchains = 4, niter = 8000, nburnin = 2000,
-                       monitors = c("loc_int", "scl_int", "sigma_rand", "L", "U", "R"),
+                       nchains = 4, niter = 3000, nburnin = 2000,
+                       monitors = c("loc_int", "scl_int", "sigma_rand", "U", "Ustar", "R"),
                        summary = TRUE, WAIC = TRUE)
 
 ## Compute Rhats and n_eff:

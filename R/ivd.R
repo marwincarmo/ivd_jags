@@ -21,8 +21,8 @@ saeb$school_ses <- c(scale(saeb$school_ses, scale = FALSE))
 location_formula = math_proficiency ~  1 + ( 1 | school_id)
 scale_formula =  ~ 1  + (1 | school_id)
 data = saeb
-niter = 4000
-nburnin = 2000
+niter = 1000
+nburnin = 500
 WAIC = TRUE
 workers = 4
 n_eff = 'local'
@@ -176,8 +176,8 @@ if (WAIC) {
 } else {
   mcmc_chains <- lapply(results, coda::as.mcmc)
 }
-
-combined_chains <- coda::mcmc.list(mcmc_chains)
+mcmc_chains0 <- lapply(results0, as.mcmc)
+combined_chains0 <- coda::mcmc.list(mcmc_chains0)
 
 ## Compute logLik:
 ## Check that Y,  mu and tau are of same length, in case grep picks up other variables
@@ -354,49 +354,59 @@ if (n_eff == 'local') {
   n_eff <- m * n / (1 + 2 * sapply(rho_t_list, sum, na.rm = TRUE))
   ## n_eff cannot be larger than the total number of samples
   n_eff <- pmin(n_eff, n * m)
+  n_eff <- round(n_eff)
 
-  ## mn_s2m_ptm <- apply(split_samples, 3, function(param_samples) {
+#########----------------------------------------------------------
 
-  ##   chain_variances <- apply(param_samples, 2, function(chain) {
-  ##     chain_mean <- mean(chain)
-  ##     sum((chain - chain_mean)^2) / (n - 1)  # s2m: Variance for each chain
-  ##   })
+  mn_s2m_ptm <- apply(split_samples, 3, function(param_samples) {
 
-  ##   chain_rho <- apply(param_samples, 2, function(samp_per_chain) {
-  ##     acf_values <- .autocorrelation_fft( samp_per_chain )
-  ##     ## Truncate according to Geyer (1992)
-  ##     position <-  min( seq(2:length(acf_values))[acf_values[-length(acf_values)] + acf_values[-1] < 0] )
-  ##     ## position contains NA for constants, needs to be addressed here:
+    chain_variances <- apply(param_samples, 2, function(chain) {
+      chain_mean <- mean(chain)
+      sum((chain - chain_mean)^2) / (n - 1)  # s2m: Variance for each chain
+    })
 
-  ##     if( !is.na(position) ) {
-  ##       ## Pad with NA's so that all vectors are of same length. Saves me storing the position object
-  ##       ## pad with NA so that mean() can be calculated over differing rho's per chains
-  ##       rho <- append(acf_values[1:position+1], rep(NA, length(acf_values)-position), after = position)
-  ##     } else {
-  ##       rho <- rep(NA, n)
-  ##     }
-  ##   })
+    chain_rho <- apply(param_samples, 2, function(samp_per_chain) {
+      acf_values <- .autocorrelation_fft( samp_per_chain )
+      ## Truncate according to Geyer (1992)
+      position <-  min( seq(2:length(acf_values))[acf_values[-length(acf_values)] + acf_values[-1] < 0] )
+      ## position contains NA for constants, needs to be addressed here:
 
-  ##   s2m_rtm <- lapply(seq_along(chain_variances), function(i) {
-  ##     chain_variances[i] * chain_rho[,i]
-  ##   })
+      if( !is.na(position) ) {
+        ## Pad with NA's so that all vectors are of same length. Saves me storing the position object
+        ## pad with NA so that mean() can be calculated over differing rho's per chains
+        rho <- append(acf_values[1:position+1], rep(NA, length(acf_values)-position), after = position)
+      } else {
+        rho <- rep(NA, n)
+      }
+    })
 
-  ##   ## average across chains
-  ##   ## Convert list to a matrix
-  ##   matrix_form <- do.call(cbind, s2m_rtm)
-  ##   avg_s2m_rtm <- rowMeans(matrix_form, na.rm = TRUE)
-  ## })
+    s2m_rtm <- lapply(seq_along(chain_variances), function(i) {
+      chain_variances[i] * chain_rho[,i]
+    })
 
-  ## ## Eq 10: W - mn_s2m_ptm
-  ## numerator <- matrix(W, nrow = nrow(mn_s2m_ptm), ncol = length(W), byrow = TRUE) - mn_s2m_ptm
-  ## rho_t <- 1 - numerator / matrix(vtp, nrow = nrow(numerator), ncol = length(vtp), byrow = TRUE)
+    ## average across chains
+    ## Convert list to a matrix
+    matrix_form <- do.call(cbind, s2m_rtm)
+    avg_s2m_rtm <- rowMeans(matrix_form, na.rm = TRUE)
+  })
 
-  ## n_eff <- round( n*m / ( 1+2*colSums(rho_t, na.rm = TRUE) ) )
+  ## Eq 10: W - mn_s2m_ptm
+  numerator <- matrix(W, nrow = nrow(mn_s2m_ptm), ncol = length(W), byrow = TRUE) - mn_s2m_ptm
+  rho_t <- 1 - numerator / matrix(vtp, nrow = nrow(numerator), ncol = length(vtp), byrow = TRUE)
+
+  n_eff <- round( n*m / ( 1+2*colSums(rho_t, na.rm = TRUE) ) )
 
 }  else if(n_eff == 'stan') {
   ## Based on rstan, takes forever...
-  monitor_results <- rstan::monitor(samples_array, print = FALSE)
-  n_eff <- monitor_results$n_eff
+  #monitor_results <- rstan::monitor(samples_array, print = FALSE)
+  #n_eff <- monitor_results$n_eff
+
+  samples_array <- array(NA, dim = c(iterations, chains, parameters))
+    for (i in seq_along(combined_chains)) {
+      samples_array[, i, ] <- combined_chains[[i]]
+    }
+    monitor_results <- rstan::monitor(samples_array, print = FALSE)
+    n_eff <- monitor_results$n_eff
 }
 
 ## Extract and print R-hat values

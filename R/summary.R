@@ -67,10 +67,10 @@ summary.ivd <- function(object, digits = 2, pip = 'all', ...) {
   ## exclude mu and tau
   mu_index <- grep('mu',  cn )
   tau_index <- grep('tau',  cn )
-  loglik_index <- grep('loglik', cn)
+  loglik_index <-  grep('loglik',  cn )
 
   ## mcmc from coda
-  summary_stats <- summary(mcmc(combined_samples[, -c(mu_index, tau_index, loglik_index)]))
+  summary_stats <- summary(mcmc(combined_samples[, -c(mu_index, tau_index)]))
 
   ## Add n_eff and R-hats
   summary_stats$statistics <- cbind(summary_stats$statistics,
@@ -157,58 +157,25 @@ summary.ivd <- function(object, digits = 2, pip = 'all', ...) {
   chains <- object$workers
   cat("Chains (workers):",  chains, "\n\n")
 
-  ## ## extract WAIC per chain
-  ## waic_values <- sapply(object$samples, FUN = function(chain) chain$WAIC$WAIC)
-  ## ## extract lppd per chain
-  ## lppd_values <- sapply(object$samples, FUN = function(chain) chain$WAIC$lppd)
-  ## ## extract pWAIC per chain
-  ## pwaic_values <- sapply(object$samples, FUN = function(chain) chain$WAIC$pWAIC)
+  ## extract WAIC per chain
+  waic_values <- sapply(object$samples, FUN = function(chain) chain$WAIC$WAIC)
+  ## extract lppd per chain
+  lppd_values <- sapply(object$samples, FUN = function(chain) chain$WAIC$lppd)
+  ## extract pWAIC per chain
+  pwaic_values <- sapply(object$samples, FUN = function(chain) chain$WAIC$pWAIC)
 
-  ## ## Average across chains
-  ## average_waic <- mean(waic_values)
-  ## average_lppd <- mean(lppd_values)
-  ## average_pwaic <- mean(pwaic_values)
-
-  ## Loglik from monitored values
-
-  calculate_waic <- function(loglik_matrix) {
-    if (is.null(loglik_matrix) || !is.matrix(loglik_matrix)) {
-      warning("loglik matrix not found or invalid. Cannot calculate WAIC.")
-      return(list(WAIC = NA, p_waic = NA, lppd = NA))
-    }
-                                        # lppd: log pointwise predictive density
-    lppd <- sum(log(apply(exp(loglik_matrix), 2, mean)))
-
-                                        # p_waic: effective number of parameters
-    p_waic <- sum(apply(loglik_matrix, 2, var))
-
-                                        # WAIC
-    waic_val <- -2 * (lppd - p_waic)
-
-    return(list(WAIC = waic_val, p_waic = p_waic, lppd = lppd))
-  }
-
-
-  loglik_cols <- grep("loglik\\[", colnames(results$samples[[1]]))
-  if (length(loglik_cols) > 0) {
-                                        # Combine all chains into a single matrix for loglik
-    all_chains_loglik <- do.call(rbind, results$samples[, loglik_cols])
-    out$WAIC_details <- calculate_waic(all_chains_loglik)
-    #out$WAIC <- out$WAIC_details$WAIC
-    #out$p_waic <- out$WAIC_details$p_waic
-    #out$lppd <- out$WAIC_details$lppd
-  } else {
-    out$WAIC <- NA
-    warning("WAIC could not be calculated because 'loglik' was not found in the posterior samples.")
-  }
+  ## Average across chains
+  average_waic <- mean(waic_values)
+  average_lppd <- mean(lppd_values)
+  average_pwaic <- mean(pwaic_values)
 
   print(table)
   .newline
 
   ## Print the results
-  cat("\nWAIC:", out$WAIC_details$WAIC, "\n")
-  cat("elppd:", out$WAIC_details$lppd, "\n")
-  cat("pWAIC:", out$WAIC_details$p_waic, "\n")
+  cat("\nWAIC:", average_waic, "\n")
+  cat("elppd:", average_lppd, "\n")
+  cat("pWAIC:", average_pwaic, "\n")
 
   class(table) <- "summary.ivd"
   invisible(table)
